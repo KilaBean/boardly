@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("foundation smoke", () => {
-  test("renders the Boardly foundation page", async ({ page }) => {
+test.describe("landing page smoke", () => {
+  test("renders the Boardly landing page", async ({ page }) => {
     await page.goto("/");
 
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
