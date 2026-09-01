@@ -26,7 +26,13 @@ test.describe("public share route", () => {
   for (const token of ["../../dashboard", "not a token", "'; drop table boards;--"]) {
     test(`rejects the malformed token ${JSON.stringify(token)}`, async ({ page }) => {
       const response = await page.goto(`/share/${encodeURIComponent(token)}`);
-      expect(response?.status()).toBe(404);
+      // Any client error is correct. Locally every case is a 404 from the
+      // route; on Vercel a path-traversal pattern is rejected at the edge with
+      // a 400 before the app is reached. Both mean "did not resolve to a
+      // board", which is the property under test — asserting exactly 404
+      // pinned an implementation detail of where the rejection happens.
+      expect(response?.status()).toBeGreaterThanOrEqual(400);
+      expect(response?.status()).toBeLessThan(500);
     });
   }
 });

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { noStore } from "@/lib/http/no-store";
 
 import { listBoards } from "@/features/boards/data";
 import { getUser } from "@/lib/auth/dal";
@@ -25,13 +26,16 @@ export async function GET(
 ) {
   const user = await getUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: noStore() });
   }
 
   const { workspaceId } = await context.params;
   const parsed = uuidSchema.safeParse(workspaceId);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid workspace id" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid workspace id" },
+      { status: 400, headers: noStore() },
+    );
   }
 
   const boards = await listBoards(parsed.data);
@@ -39,6 +43,6 @@ export async function GET(
   return NextResponse.json(
     { boards },
     // Per-user data: must never be stored by a shared cache.
-    { headers: { "Cache-Control": "private, no-store" } },
+    { headers: noStore() },
   );
 }

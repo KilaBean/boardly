@@ -38,6 +38,20 @@ test.describe("liveblocks auth endpoint", () => {
     expect(body.toLowerCase()).not.toContain("token");
   });
 
+  test("is never marked publicly cacheable", async ({ request }) => {
+    // The success response carries a Liveblocks room access token, and the
+    // failure responses are authorization-dependent. Setting no Cache-Control
+    // at all lets the platform default apply — on Vercel that is
+    // "public, max-age=0, must-revalidate", which marks a bearer-token
+    // response public. Only visible against a real deployment.
+    const response = await request.post("/api/liveblocks-auth", {
+      data: { room: `board:${VALID_UUID}` },
+    });
+    const cacheControl = response.headers()["cache-control"] ?? "";
+    expect(cacheControl).not.toMatch(/(^|,)\s*public/);
+    expect(cacheControl).toMatch(/no-store/);
+  });
+
   test("rejects a GET — the endpoint is POST-only", async ({ request }) => {
     const response = await request.get("/api/liveblocks-auth");
     expect(response.status()).toBeGreaterThanOrEqual(400);

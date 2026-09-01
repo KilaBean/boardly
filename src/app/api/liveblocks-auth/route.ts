@@ -1,4 +1,5 @@
 import { Liveblocks } from "@liveblocks/node";
+import { noStore } from "@/lib/http/no-store";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/dal";
@@ -33,7 +34,7 @@ const liveblocks = new Liveblocks({ secret: serverEnv.LIVEBLOCKS_SECRET_KEY });
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
-    return new NextResponse("Unauthorized", { status: 401 });
+    return new NextResponse("Unauthorized", { status: 401, headers: noStore() });
   }
 
   let room: unknown;
@@ -41,13 +42,13 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as { room?: unknown };
     room = body.room;
   } catch {
-    return new NextResponse("Bad request", { status: 400 });
+    return new NextResponse("Bad request", { status: 400, headers: noStore() });
   }
 
   // The room name is client-supplied. Parse it; never trust it as a board id.
   const boardId = parseBoardRoomId(room);
   if (!boardId || typeof room !== "string") {
-    return new NextResponse("Forbidden", { status: 403 });
+    return new NextResponse("Forbidden", { status: 403, headers: noStore() });
   }
 
   const supabase = await createClient();
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
   // No access, or a board that does not exist — indistinguishable on purpose,
   // so the response cannot be used to discover which boards exist.
   if (role === null) {
-    return new NextResponse("Forbidden", { status: 403 });
+    return new NextResponse("Forbidden", { status: 403, headers: noStore() });
   }
 
   const session = liveblocks.prepareSession(user.id, {
@@ -81,5 +82,6 @@ export async function POST(request: NextRequest) {
   session.allow(room, canEdit === true ? ["*:write"] : ["*:read"]);
 
   const { status, body } = await session.authorize();
-  return new NextResponse(body, { status });
+  // Carries a room access token: must never be cached anywhere.
+  return new NextResponse(body, { status, headers: noStore() });
 }
