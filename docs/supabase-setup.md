@@ -236,6 +236,50 @@ Two independent guards, because seeding **deletes and recreates users**:
 So pointing `.env.local` at your real project is safe: `npm run test:e2e` will
 quietly run only the anonymous suite rather than wiping your users.
 
+## Deploying to Vercel
+
+The project is linked to `KilaBean/boardly` on GitHub, so **pushing to `main`
+deploys**. No CLI step is needed.
+
+### Environment variables
+
+Set these in _Vercel → boardly → Settings → Environment Variables_, for
+Production (and Preview if you want previews to work):
+
+| Variable                            | Notes                              |
+| ----------------------------------- | ---------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`          | Project URL                        |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`     | anon / publishable key             |
+| `SUPABASE_SERVICE_ROLE_KEY`         | **secret** — bypasses RLS entirely |
+| `NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY` | Liveblocks public key              |
+| `LIVEBLOCKS_SECRET_KEY`             | **secret** — signs room tokens     |
+
+`NEXT_PUBLIC_APP_URL` is deliberately **not** in that list. `next.config.ts`
+derives it from Vercel's `VERCEL_PROJECT_PRODUCTION_URL`, because the
+production domain does not exist until the first deployment — and because a
+stale hand-set value silently mints invitation and share links pointing at the
+wrong host. Set it explicitly only when you attach a custom domain.
+
+A missing variable **fails the build** with a message naming it (verified:
+exit code 1), rather than deploying something broken.
+
+### After the first successful deploy
+
+Two things must be updated with the real production URL:
+
+1. **Supabase** → _Authentication → URL Configuration_: set Site URL and add
+   `https://<your-domain>/**` to the redirect allow-list. Until this is done,
+   Google OAuth and every email link will be rejected.
+2. **Google Cloud** → the OAuth client's authorised redirect URI stays
+   `https://<project-ref>.supabase.co/auth/v1/callback` — it points at
+   Supabase, not at the app, so it does not change.
+
+### What is not deployed
+
+The E2E suite never runs against production: the authenticated Playwright
+projects only register when `NEXT_PUBLIC_SUPABASE_URL` is local, and the seed
+helper refuses non-local URLs outright. Both are covered by tests.
+
 ## What the schema guarantees
 
 Two triggers keep invariants true regardless of which code path runs:
