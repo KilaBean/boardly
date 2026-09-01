@@ -30,6 +30,7 @@ import {
 export function useYjsBinding({ editor, enabled }: { editor: Editor | null; enabled: boolean }) {
   const room = useRoom();
   const [synced, setSynced] = useState(false);
+  const [restoredFromRoom, setRestoredFromRoom] = useState(false);
 
   useEffect(() => {
     if (!editor || !enabled) return;
@@ -66,6 +67,11 @@ export function useYjsBinding({ editor, enabled }: { editor: Editor | null; enab
 
       if (!seeded) {
         applyToStore(readAllRecords(yRecords), []);
+        // Reported so persistence can tell where the canvas came from: content
+        // taken out of the room is not yet in Postgres, and nothing else marks
+        // it as needing a save (it arrives as a "remote" change, which autosave
+        // deliberately ignores).
+        setRestoredFromRoom(true);
       }
       setSynced(true);
     };
@@ -98,5 +104,5 @@ export function useYjsBinding({ editor, enabled }: { editor: Editor | null; enab
     };
   }, [editor, enabled, room]);
 
-  return { synced };
+  return { synced, restoredFromRoom };
 }

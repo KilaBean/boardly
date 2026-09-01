@@ -178,14 +178,23 @@ function CollaborativeCanvas({
 }: Omit<BoardCanvasProps, "collaborative">) {
   const { editor, handleMount } = useCanvasMount(initialDocument, canEdit);
 
-  const { synced } = useYjsBinding({ editor, enabled: true });
+  const { synced, restoredFromRoom } = useYjsBinding({ editor, enabled: true });
   usePresence({ editor, user, enabled: true });
   useCanvasPinInteractions({ editor, pinMode, onPlacePin, focusPoint });
 
-  // Snapshots are a backup of the collaborative document, so they only start
-  // once the room has synced. Saving before then could persist our local
-  // snapshot over a room that already had newer content.
-  const { status } = useBoardPersistence({ editor, boardId, enabled: canEdit && synced });
+  // `synced` gates the write, not the listening: a snapshot taken before the
+  // room arrives could be missing a collaborator's newer content, but changes
+  // made while waiting still have to be remembered. See use-board-persistence.
+  const { status } = useBoardPersistence({
+    editor,
+    boardId,
+    enabled: canEdit,
+    synced,
+    // A board with no snapshot whose content came out of the room has never
+    // been persisted. Bounded to that case on purpose: once the backfill save
+    // lands there is a snapshot, so a later visit does not repeat it.
+    backfill: initialDocument === null && restoredFromRoom,
+  });
 
   // Memoized because tldraw remounts the slot whenever this object identity
   // changes, which would make pins flicker on every render.
