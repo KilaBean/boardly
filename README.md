@@ -1,8 +1,43 @@
 # Boardly
 
-Real-time collaborative whiteboard SaaS. Create workspaces and boards, draw on an infinite canvas, and collaborate live.
+**A real-time collaborative whiteboard.** Create a workspace, invite your team, and
+think together on an infinite canvas — with everyone's cursor visible and every
+change arriving as it happens.
 
-> **Status: Phase 8 (Comments & activity) complete.** All MVP feature areas are implemented: auth, workspaces, boards, canvas, live collaboration, sharing, comments and activity. Remaining work is production configuration and the authenticated end-to-end test layer.
+**[Open the live app →](https://boardly-eight-gamma.vercel.app)**
+
+![A Boardly board titled "Sprint 14 planning", showing a flow diagram of coloured
+boxes connected by arrows on the canvas, with the board toolbar, comments and
+share controls around it.](docs/screenshots/board.png)
+
+## What it does
+
+- **An infinite canvas** — shapes, arrows, text, freehand drawing and images, with
+  full keyboard shortcuts, undo and redo.
+- **Everyone at once** — collaborators' cursors and selections move live; edits
+  converge without conflicts and reconnection is handled for you.
+- **Comments that stay put** — pinned to the exact point on the board they refer
+  to, and resolvable once settled.
+- **Sharing you decide up front** — invite by email as an editor or viewer, or
+  publish a link and choose whether it grants viewing or editing before you send it.
+- **An activity trail** — boards created and renamed, people joining, comments
+  resolved. Nothing happens silently.
+- **Private by default** — access is enforced by row-level security in Postgres,
+  not by the interface. A private board stays private even from workspace admins.
+
+<details>
+<summary>Landing page</summary>
+
+![The Boardly landing page, with the headline "The collaborative whiteboard your
+team actually stays in" above three feature cards.](docs/screenshots/landing.png)
+
+</details>
+
+> **Status:** all MVP feature areas are built and deployed — auth (including Google
+> sign-in), workspaces, boards, canvas, live collaboration, sharing, comments and
+> activity. Invitation email is integrated but not configured, so invitations
+> currently fall back to a copyable link. Design decisions and their trade-offs are
+> recorded in [`docs/adr`](docs/adr).
 
 ## Stack
 
