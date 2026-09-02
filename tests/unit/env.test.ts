@@ -28,6 +28,25 @@ describe("clientEnvSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("treats the tldraw license key as optional", () => {
+    // Absent is valid: localhost runs unlicensed. It is deployments that need
+    // it, and a missing value there must fail visibly in tldraw rather than at
+    // boot on a developer's machine.
+    expect(clientEnvSchema.safeParse(validClient).success).toBe(true);
+    expect(
+      clientEnvSchema.safeParse({ ...validClient, NEXT_PUBLIC_TLDRAW_LICENSE_KEY: "tldraw-key" })
+        .success,
+    ).toBe(true);
+  });
+
+  it("rejects an empty tldraw license key", () => {
+    // An empty string is a misconfiguration, not "unlicensed" — it usually
+    // means the variable was added to the environment but never filled in.
+    expect(
+      clientEnvSchema.safeParse({ ...validClient, NEXT_PUBLIC_TLDRAW_LICENSE_KEY: "" }).success,
+    ).toBe(false);
+  });
+
   it.each(Object.keys(validClient))("rejects a missing %s", (key) => {
     const { [key]: _omitted, ...rest } = validClient as Record<string, string>;
     expect(clientEnvSchema.safeParse(rest).success).toBe(false);

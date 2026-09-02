@@ -17,6 +17,16 @@ export const clientEnvSchema = z.object({
     .string()
     .min(1, "NEXT_PUBLIC_LIVEBLOCKS_PUBLIC_KEY is required"),
   NEXT_PUBLIC_APP_URL: z.url({ message: "NEXT_PUBLIC_APP_URL must be a valid URL" }),
+  /**
+   * tldraw license key.
+   *
+   * Optional, because the canvas runs unlicensed on localhost — but on any
+   * other domain tldraw resolves to `unlicensed-production`, renders for five
+   * seconds and then removes the editor from the page (see `LicenseProvider`
+   * and `LICENSE_TIMEOUT` in @tldraw/editor). Without this set, a deployed
+   * board loads and then goes blank.
+   */
+  NEXT_PUBLIC_TLDRAW_LICENSE_KEY: z.string().min(1).optional(),
 });
 
 /** Server-only secrets. Never import these from a client component. */

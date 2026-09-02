@@ -6,6 +6,7 @@ import { Tldraw, type Editor, type TLComponents, type TLStoreSnapshot } from "tl
 import "tldraw/tldraw.css";
 
 import type { CurrentUser } from "@/lib/auth/dal";
+import { clientEnv } from "@/lib/env";
 
 import { BoardRoom } from "./board-room";
 import { CanvasPins, type CanvasPin } from "./canvas-pins";
@@ -151,7 +152,18 @@ function CanvasSurface({
         // drops a pin rather than draws.
         style={pinMode ? { cursor: "crosshair" } : undefined}
       >
-        <Tldraw onMount={handleMount} components={components} />
+        {/*
+          The licence key is not optional in production. tldraw reads env vars
+          itself, but only ones its bundler inlined, so it is passed explicitly:
+          with no key on a non-localhost domain tldraw resolves to
+          `unlicensed-production`, waits five seconds and then unmounts the
+          whole editor, which reads as the board loading and then vanishing.
+        */}
+        <Tldraw
+          onMount={handleMount}
+          components={components}
+          licenseKey={clientEnv.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        />
       </div>
 
       {overlay ? (
