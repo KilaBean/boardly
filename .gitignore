@@ -61,5 +61,8 @@ next-env.d.ts
 /nul
 
 # Local agent tooling: project notes, plans and editor config.
-# Kept on disk, not published.
+# Kept on disk, not published. AGENTS.md is rewritten by `next dev` on every
+# run, so it has to be ignored rather than merely deleted.
 .claude/
+/CLAUDE.md
+/AGENTS.md
