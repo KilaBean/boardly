@@ -201,6 +201,12 @@ which also revokes the old link.
 `/share/<token>` is the only route reachable without a session. It renders a
 snapshot read-only, joins no collaboration room, and is `noindex`.
 
+Profiles are readable by people you share a **workspace or a board** with. The
+board half was missing at first, so an invited collaborator — who gets board
+membership and deliberately not workspace membership — could not be named: the
+activity feed said "Someone", and because the members and comments queries join
+`profiles!inner`, their rows disappeared entirely.
+
 Accepting an invitation runs in a single SQL function so the membership and
 the "used" flag cannot come apart, and it requires the signed-in email to
 match the invited address.
