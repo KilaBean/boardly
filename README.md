@@ -12,7 +12,7 @@ Real-time collaborative whiteboard SaaS. Create workspaces and boards, draw on a
 | Language            | TypeScript 5.9 (strict)     |
 | Styling             | Tailwind CSS v4 + shadcn/ui |
 | Icons               | Lucide React                |
-| Canvas              | tldraw _(Phase 3)_          |
+| Canvas              | Excalidraw                  |
 | Real-time           | Liveblocks _(Phase 4)_      |
 | Auth / DB / Storage | Supabase _(Phase 4–5)_      |
 | UI state            | Zustand                     |
@@ -54,12 +54,12 @@ npm run dev
 
 Boardly is a **modular monolith**. The one rule that matters most is the separation of state:
 
-| State                              | Owner               | Never used for              |
-| ---------------------------------- | ------------------- | --------------------------- |
-| Ephemeral UI (active tool, panels) | Zustand             | Caching server data         |
-| Application data (boards, members) | TanStack Query      | Canvas contents             |
-| Live canvas + presence             | Liveblocks + tldraw | Durable records             |
-| Durable relational data            | Supabase Postgres   | Per-operation event streams |
+| State                              | Owner                   | Never used for              |
+| ---------------------------------- | ----------------------- | --------------------------- |
+| Ephemeral UI (active tool, panels) | Zustand                 | Caching server data         |
+| Application data (boards, members) | TanStack Query          | Canvas contents             |
+| Live canvas + presence             | Liveblocks + Excalidraw | Durable records             |
+| Durable relational data            | Supabase Postgres       | Per-operation event streams |
 
 **Critical invariant:** a board's Liveblocks room is authorized from the _same_
 membership model the HTTP APIs use. The room token is an authorization decision
@@ -82,7 +82,7 @@ src/
     auth/              # Auth server actions + forms
     workspaces/        # Workspace data, actions, switcher
     boards/
-      canvas/          # tldraw integration (isolated)
+      canvas/          # Excalidraw integration (isolated)
       snapshots/       # Document persistence
     sharing/           # Share links, invitations, membership
     comments/          # Comment data, actions, panel
@@ -146,14 +146,14 @@ See [ADR 0004](docs/adr/0004-workspaces-and-boards.md).
 
 ### Canvas
 
-tldraw is confined to `src/features/boards/canvas/` — no editor instance or
+Excalidraw is confined to `src/features/boards/canvas/` — no editor instance or
 store record escapes into the rest of the app. It is loaded with
-`dynamic(..., { ssr: false })` because it compiles to a 1.6 MB chunk that no
+`dynamic(..., { ssr: false })` because it compiles to a very large chunk that no
 other route should pay for.
 
-Only the `document` half of a tldraw snapshot is persisted, never `session`:
-session state is camera and selection, and saving it would move every
-collaborator's viewport. Autosave fires after 2s of stillness **or** 15s of
+Only the drawing is persisted, never per-viewer state: scroll, zoom, selection
+and the active tool belong to the person looking at the board, and restoring
+them would move every collaborator's viewport. Autosave fires after 2s of stillness **or** 15s of
 continuous drawing, because a plain debounce never triggers for someone who
 does not pause.
 

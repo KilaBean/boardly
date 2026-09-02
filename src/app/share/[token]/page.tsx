@@ -2,11 +2,11 @@ import { Eye, PenLine } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { TLStoreSnapshot } from "tldraw";
 
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { BoardCanvasLoader } from "@/features/boards/canvas/board-canvas-loader";
+import { parseScene } from "@/features/boards/canvas/scene";
 import { resolveShareToken } from "@/features/sharing/share-links";
 import { siteConfig } from "@/config/site";
 
@@ -65,10 +65,8 @@ export default async function SharePage({ params }: PageProps<"/share/[token]">)
 
       <BoardCanvasLoader
         boardId={board.id}
-        // Snapshots are opaque jsonb by design (tldraw owns and migrates that
-        // schema), so this is the same acknowledged boundary cast as the
-        // board route.
-        initialDocument={(board.document as unknown as TLStoreSnapshot | null) ?? null}
+        // Same boundary as the board route: opaque jsonb, validated here.
+        initialScene={parseScene(board.document)}
         canEdit={false}
         user={null}
         collaborative={false}

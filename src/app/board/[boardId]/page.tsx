@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import type { TLStoreSnapshot } from "tldraw";
 
+import { parseScene } from "@/features/boards/canvas/scene";
 import { BoardWorkspace } from "@/features/boards/components/board-workspace";
 import { getBoard } from "@/features/boards/data";
 import { getLatestSnapshot } from "@/features/boards/snapshots/data";
@@ -69,10 +69,11 @@ export default async function BoardPage({ params }: PageProps<"/board/[boardId]"
       initialComments={comments}
       unresolvedCount={unresolvedCount}
       /*
-        The snapshot is stored as opaque jsonb because tldraw owns its schema
-        and migrates documents itself. This cast is the acknowledged boundary.
+        Snapshots are opaque jsonb — nothing in Postgres knows the canvas
+        format — so the shape is checked here rather than trusted. An
+        unreadable one renders an empty board instead of breaking the page.
       */
-      initialDocument={(snapshot?.document as unknown as TLStoreSnapshot | null) ?? null}
+      initialScene={parseScene(snapshot?.document)}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import type { Editor } from "tldraw";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useBoardPersistence } from "@/features/boards/canvas/use-board-persistence";
@@ -23,49 +23,64 @@ const saveBoardSnapshotAction = vi.hoisted(() => vi.fn());
 
 vi.mock("@/features/boards/snapshots/actions", () => ({ saveBoardSnapshotAction }));
 
+/**
+ * Excalidraw's entrypoint pulls in the whole editor — fonts, canvas, a JSON
+ * import Node will not load without an import attribute — none of which this
+ * hook needs. Only `getSceneVersion` is used, and only as a change detector:
+ * the sum of element versions moves whenever anything is edited.
+ */
+vi.mock("@excalidraw/excalidraw", () => ({
+  getSceneVersion: (elements: readonly { version: number }[]) =>
+    elements.reduce((total, element) => total + element.version, 0),
+}));
+
 const BOARD_ID = "9f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f";
 const QUIET_MS = 2_000;
 
-type StoreListener = () => void;
+type ChangeListener = () => void;
+
+let nextVersion = 1;
 
 /**
- * The narrow slice of `Editor` this hook touches: a store you can listen to
- * and a snapshot you can read. Everything else on a real editor needs a DOM,
- * a canvas and a schema, none of which say anything about when we save.
+ * The narrow slice of `ExcalidrawImperativeAPI` this hook touches: a change
+ * subscription and a readable scene. A real editor needs a DOM, a canvas and
+ * a font loader, none of which say anything about when we save.
+ *
+ * Elements carry a `version` because the hook skips saving a scene whose
+ * version it has already written — so a fake that never changes version would
+ * make every save look like a no-op.
  */
-function createFakeEditor() {
-  const listeners = new Set<StoreListener>();
+function createFakeApi() {
+  const listeners = new Set<ChangeListener>();
+  let elements = [{ id: "a", version: nextVersion++ }];
 
-  const editor = {
-    store: {
-      listen(callback: StoreListener) {
-        listeners.add(callback);
-        return () => listeners.delete(callback);
-      },
+  const api = {
+    onChange(callback: ChangeListener) {
+      listeners.add(callback);
+      return () => listeners.delete(callback);
     },
-    getSnapshot: () => ({ document: { store: {}, schema: {} }, session: {} }),
+    getSceneElementsIncludingDeleted: () => elements,
+    getAppState: () => ({ viewBackgroundColor: "#ffffff" }),
+    getFiles: () => ({}),
   };
 
   return {
-    editor: editor as unknown as Editor,
-    /** Simulate a user edit reaching the store. */
+    api: api as unknown as ExcalidrawImperativeAPI,
+    /** Simulate an edit: the scene version moves, then subscribers are told. */
     change() {
+      elements = [{ id: "a", version: nextVersion++ }];
       for (const listener of listeners) listener();
     },
     listenerCount: () => listeners.size,
   };
 }
 
-type Props = { synced: boolean; enabled: boolean; backfill: boolean };
+type Props = { synced: boolean; enabled: boolean };
 
-function renderPersistence(
-  editor: Editor,
-  { synced = false, enabled = true, backfill = false } = {},
-) {
-  return renderHook(
-    (props: Props) => useBoardPersistence({ editor, boardId: BOARD_ID, ...props }),
-    { initialProps: { synced, enabled, backfill } },
-  );
+function renderPersistence(api: ExcalidrawImperativeAPI, { synced = false, enabled = true } = {}) {
+  return renderHook((props: Props) => useBoardPersistence({ api, boardId: BOARD_ID, ...props }), {
+    initialProps: { synced, enabled },
+  });
 }
 
 beforeEach(() => {
@@ -80,16 +95,16 @@ afterEach(() => {
 
 describe("before the room has synced", () => {
   it("listens to the store immediately", () => {
-    const fake = createFakeEditor();
-    renderPersistence(fake.editor, { synced: false });
+    const fake = createFakeApi();
+    renderPersistence(fake.api, { synced: false });
 
     // The regression in one assertion: the listener must exist before sync.
     expect(fake.listenerCount()).toBe(1);
   });
 
   it("does not write a snapshot yet", () => {
-    const fake = createFakeEditor();
-    renderPersistence(fake.editor, { synced: false });
+    const fake = createFakeApi();
+    renderPersistence(fake.api, { synced: false });
 
     act(() => {
       fake.change();
@@ -101,8 +116,8 @@ describe("before the room has synced", () => {
   });
 
   it("saves the changes made while waiting, the moment sync lands", () => {
-    const fake = createFakeEditor();
-    const { rerender } = renderPersistence(fake.editor, { synced: false });
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false });
 
     act(() => {
       fake.change();
@@ -113,33 +128,36 @@ describe("before the room has synced", () => {
     // No further edit — this is the case that lost data. Someone draws, the
     // room is still connecting, and they stop. Sync alone has to trigger it.
     act(() => {
-      rerender({ synced: true, enabled: true, backfill: false });
+      rerender({ synced: true, enabled: true });
     });
 
     expect(saveBoardSnapshotAction).toHaveBeenCalledTimes(1);
-    expect(saveBoardSnapshotAction).toHaveBeenCalledWith(BOARD_ID, { store: {}, schema: {} });
+    expect(saveBoardSnapshotAction).toHaveBeenCalledWith(
+      BOARD_ID,
+      expect.objectContaining({ elements: expect.any(Array) }),
+    );
   });
 
   it("saves pre-sync changes even when the quiet period never elapsed", () => {
-    const fake = createFakeEditor();
-    const { rerender } = renderPersistence(fake.editor, { synced: false });
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false });
 
     act(() => {
       fake.change();
       // Sync arrives while the debounce is still running.
       vi.advanceTimersByTime(QUIET_MS / 2);
-      rerender({ synced: true, enabled: true, backfill: false });
+      rerender({ synced: true, enabled: true });
     });
 
     expect(saveBoardSnapshotAction).toHaveBeenCalledTimes(1);
   });
 
   it("does not write when nothing was drawn before sync", () => {
-    const fake = createFakeEditor();
-    const { rerender } = renderPersistence(fake.editor, { synced: false });
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false });
 
     act(() => {
-      rerender({ synced: true, enabled: true, backfill: false });
+      rerender({ synced: true, enabled: true });
       vi.advanceTimersByTime(QUIET_MS);
     });
 
@@ -150,25 +168,44 @@ describe("before the room has synced", () => {
 });
 
 describe("a board that was only ever in the room", () => {
-  it("writes a snapshot on sync even though this client changed nothing", () => {
-    const fake = createFakeEditor();
-    const { rerender } = renderPersistence(fake.editor, { synced: false });
+  it("writes a snapshot for content the room brought in, not just local edits", () => {
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false });
 
-    // Restoring from the room is a "remote" change, so it never reaches the
-    // autosave listener. Without the backfill the board stays unbacked.
+    // Restoring a board out of the Liveblocks room reaches this hook as an
+    // ordinary change, because Excalidraw's onChange does not say who caused
+    // it. That is what lets a board that exists only in the room finally get
+    // a durable snapshot, instead of waiting for an edit that may never come.
     act(() => {
-      rerender({ synced: true, enabled: true, backfill: true });
+      fake.change();
+      rerender({ synced: true, enabled: true });
     });
 
     expect(saveBoardSnapshotAction).toHaveBeenCalledTimes(1);
   });
 
+  it("skips the write when the room held exactly what was already saved", () => {
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false });
+
+    // Sync applied nothing new, so the scene version still matches what is in
+    // Postgres. Saving anyway would append a snapshot on every single visit.
+    act(() => {
+      rerender({ synced: true, enabled: true });
+      vi.advanceTimersByTime(QUIET_MS);
+    });
+
+    expect(saveBoardSnapshotAction).not.toHaveBeenCalled();
+  });
+
   it("still refuses to write for a viewer", () => {
-    const fake = createFakeEditor();
-    const { rerender } = renderPersistence(fake.editor, { synced: false, enabled: false });
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false, enabled: false });
 
     act(() => {
-      rerender({ synced: true, enabled: false, backfill: true });
+      fake.change();
+      rerender({ synced: true, enabled: false });
+      vi.advanceTimersByTime(QUIET_MS);
     });
 
     expect(saveBoardSnapshotAction).not.toHaveBeenCalled();
@@ -177,8 +214,8 @@ describe("a board that was only ever in the room", () => {
 
 describe("once synced", () => {
   it("saves after the quiet period", () => {
-    const fake = createFakeEditor();
-    renderPersistence(fake.editor, { synced: true });
+    const fake = createFakeApi();
+    renderPersistence(fake.api, { synced: true });
 
     act(() => {
       fake.change();
@@ -193,8 +230,8 @@ describe("once synced", () => {
   });
 
   it("does not save again when nothing further changed", () => {
-    const fake = createFakeEditor();
-    renderPersistence(fake.editor, { synced: true });
+    const fake = createFakeApi();
+    renderPersistence(fake.api, { synced: true });
 
     act(() => {
       fake.change();
@@ -210,8 +247,8 @@ describe("once synced", () => {
   it("reports the failure rather than pretending the board is safe", async () => {
     saveBoardSnapshotAction.mockResolvedValue({ ok: false, error: "nope" });
 
-    const fake = createFakeEditor();
-    const { result } = renderPersistence(fake.editor, { synced: true });
+    const fake = createFakeApi();
+    const { result } = renderPersistence(fake.api, { synced: true });
 
     await act(async () => {
       fake.change();
@@ -224,19 +261,19 @@ describe("once synced", () => {
 
 describe("viewers and archived boards", () => {
   it("never listens, so no viewer can write a snapshot", () => {
-    const fake = createFakeEditor();
-    renderPersistence(fake.editor, { synced: true, enabled: false });
+    const fake = createFakeApi();
+    renderPersistence(fake.api, { synced: true, enabled: false });
 
     expect(fake.listenerCount()).toBe(0);
   });
 
   it("stays silent even once the room syncs", () => {
-    const fake = createFakeEditor();
-    const { rerender } = renderPersistence(fake.editor, { synced: false, enabled: false });
+    const fake = createFakeApi();
+    const { rerender } = renderPersistence(fake.api, { synced: false, enabled: false });
 
     act(() => {
       fake.change();
-      rerender({ synced: true, enabled: false, backfill: false });
+      rerender({ synced: true, enabled: false });
       vi.advanceTimersByTime(QUIET_MS);
     });
 
@@ -246,8 +283,8 @@ describe("viewers and archived boards", () => {
 
 describe("leaving the board", () => {
   it("flushes pending changes on unmount rather than dropping them", () => {
-    const fake = createFakeEditor();
-    const { unmount } = renderPersistence(fake.editor, { synced: true });
+    const fake = createFakeApi();
+    const { unmount } = renderPersistence(fake.api, { synced: true });
 
     act(() => {
       fake.change();
@@ -263,8 +300,8 @@ describe("leaving the board", () => {
   });
 
   it("flushes when the tab is hidden", () => {
-    const fake = createFakeEditor();
-    renderPersistence(fake.editor, { synced: true });
+    const fake = createFakeApi();
+    renderPersistence(fake.api, { synced: true });
 
     act(() => {
       fake.change();

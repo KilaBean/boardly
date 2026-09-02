@@ -13,7 +13,7 @@ async function openSharedBoard(page: import("@playwright/test").Page) {
   await page.goto(`/w/${SEED.workspace.slug}`);
   await page.getByRole("heading", { name: SEED.sharedBoard }).click();
   await expect(page).toHaveURL(/\/board\//, { timeout: 20_000 });
-  await expect(page.locator(".tl-container")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".excalidraw")).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe("comments", () => {

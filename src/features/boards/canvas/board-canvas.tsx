@@ -1,25 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Tldraw, type Editor, type TLComponents, type TLStoreSnapshot } from "tldraw";
+import { Excalidraw, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { useTheme } from "next-themes";
+import { useEffect, useMemo, useState } from "react";
 
-import "tldraw/tldraw.css";
+import "@excalidraw/excalidraw/index.css";
 
 import type { CurrentUser } from "@/lib/auth/dal";
-import { clientEnv } from "@/lib/env";
 
 import { BoardRoom } from "./board-room";
 import { CanvasPins, type CanvasPin } from "./canvas-pins";
 import { Collaborators, ConnectionStatus } from "./connection-status";
 import { SaveIndicator } from "./save-indicator";
+import type { BoardScene } from "./scene";
 import { useBoardPersistence } from "./use-board-persistence";
-import { usePresence } from "./use-presence";
+import { useCanvasTransform, type CanvasTransform } from "./use-canvas-transform";
+import { usePresence, type PointerPayload } from "./use-presence";
 import { useYjsBinding } from "./use-yjs-binding";
 
 export type BoardCanvasProps = {
   boardId: string;
-  /** Last saved tldraw document, or null for a fresh board. */
-  initialDocument: TLStoreSnapshot | null;
+  /** Last saved scene, or null for a fresh board. */
+  initialScene: BoardScene | null;
   canEdit: boolean;
   user: CurrentUser | null;
   /**
@@ -31,15 +34,15 @@ export type BoardCanvasProps = {
   pins?: CanvasPin[];
   activePinId?: string | null;
   onSelectPin?: (pinId: string) => void;
-  /** While true, the next canvas click reports a page-space point instead. */
+  /** While true, the next canvas click reports a scene-space point instead. */
   pinMode?: boolean;
   onPlacePin?: (point: { x: number; y: number }) => void;
-  /** Page-space point to bring into view, e.g. from "Show on board". */
+  /** Scene-space point to bring into view, e.g. from "Show on board". */
   focusPoint?: { x: number; y: number } | null;
 };
 
 /**
- * The tldraw canvas, isolated behind one component.
+ * The Excalidraw canvas, isolated behind one component.
  *
  * Two modes, split into separate components rather than branching inside one:
  * the collaborative mode uses hooks the static mode must not call, and hooks
@@ -62,61 +65,72 @@ export function BoardCanvas({ collaborative = true, ...props }: BoardCanvasProps
   );
 }
 
-/** Shared mount behaviour: seed the snapshot, apply read-only, expose editor. */
-function useCanvasMount(initialDocument: TLStoreSnapshot | null, canEdit: boolean) {
-  const [editor, setEditor] = useState<Editor | null>(null);
-
-  const handleMount = useCallback(
-    (mountedEditor: Editor) => {
-      if (initialDocument) {
-        mountedEditor.loadSnapshot({ document: initialDocument });
-      }
-
-      // tldraw enforces this internally — hiding the UI alone would leave
-      // keyboard shortcuts and paste working for a viewer.
-      if (!canEdit) {
-        mountedEditor.updateInstanceState({ isReadonly: true });
-      }
-
-      setEditor(mountedEditor);
-    },
-    [initialDocument, canEdit],
+/**
+ * `initialData` is read once, when Excalidraw mounts.
+ *
+ * Only the board's own appearance is restored. Scroll, zoom, selection and the
+ * active tool are per-viewer; `scrollToContent` then frames whatever is on the
+ * board so a returning visitor lands on the drawing rather than on empty space
+ * wherever the last person happened to be.
+ */
+function useInitialData(scene: BoardScene | null) {
+  return useMemo(
+    () => ({
+      elements: scene?.elements ?? [],
+      appState: {
+        ...(scene?.appState?.viewBackgroundColor
+          ? { viewBackgroundColor: scene.appState.viewBackgroundColor }
+          : {}),
+      },
+      ...(scene?.files ? { files: scene.files } : {}),
+      scrollToContent: true,
+    }),
+    [scene],
   );
-
-  return { editor, handleMount };
 }
 
 /**
  * Pin placement and camera focus.
  *
- * Placement listens on the container in the capture phase so the click is
- * intercepted before tldraw's own tools act on it — otherwise dropping a pin
- * would also draw a shape.
+ * Placement listens on the wrapper in the capture phase so the click is
+ * intercepted before Excalidraw's own tools act on it — otherwise dropping a
+ * pin would also draw a shape.
  */
 function useCanvasPinInteractions({
-  editor,
+  api,
+  container,
+  transform,
   pinMode,
   onPlacePin,
   focusPoint,
 }: {
-  editor: Editor | null;
+  api: ExcalidrawImperativeAPI | null;
+  container: HTMLDivElement | null;
+  transform: CanvasTransform;
   pinMode?: boolean;
   onPlacePin?: (point: { x: number; y: number }) => void;
   focusPoint?: { x: number; y: number } | null;
 }) {
   useEffect(() => {
-    if (!editor || !pinMode || !onPlacePin) return;
+    if (!api || !container || !pinMode || !onPlacePin) return;
 
-    const container = editor.getContainer();
     const handlePointerDown = (event: PointerEvent) => {
-      // Ignore clicks on tldraw's own UI (toolbar, menus).
-      if ((event.target as HTMLElement | null)?.closest(".tlui-layout__top")) return;
+      // Ignore clicks on Excalidraw's own UI (toolbar, panels, menus).
+      if (
+        (event.target as HTMLElement | null)?.closest(".excalidraw .App-menu, .excalidraw .Island")
+      ) {
+        return;
+      }
 
       event.preventDefault();
       event.stopPropagation();
 
-      // Page space, not screen space: a pin must survive pan and zoom.
-      const point = editor.inputs.currentPagePoint;
+      const state = api.getAppState();
+      // Scene space, not viewport space: a pin must survive pan and zoom.
+      const point = viewportCoordsToSceneCoords(
+        { clientX: event.clientX, clientY: event.clientY },
+        state,
+      );
       onPlacePin({ x: point.x, y: point.y });
     };
 
@@ -124,61 +138,104 @@ function useCanvasPinInteractions({
     return () => {
       container.removeEventListener("pointerdown", handlePointerDown, { capture: true });
     };
-  }, [editor, pinMode, onPlacePin]);
+  }, [api, container, pinMode, onPlacePin]);
 
   useEffect(() => {
-    if (!editor || !focusPoint) return;
-    editor.centerOnPoint(focusPoint, { animation: { duration: 200 } });
-  }, [editor, focusPoint]);
+    if (!api || !focusPoint) return;
+
+    const { zoom, width, height } = transform;
+    if (width === 0 || height === 0) return;
+
+    // Inverse of Excalidraw's `(scene + scroll) * zoom + offset`, solved for
+    // the scroll that puts the point in the middle of the canvas.
+    api.updateScene({
+      appState: {
+        scrollX: width / 2 / zoom - focusPoint.x,
+        scrollY: height / 2 / zoom - focusPoint.y,
+      },
+    });
+    // Intentionally not depending on `transform`: this must fire when a pin is
+    // chosen, not every time the viewport moves, or the camera would be pinned
+    // in place and panning would be impossible.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, focusPoint]);
 }
 
 function CanvasSurface({
-  handleMount,
+  onApi,
+  initialData,
+  readOnly,
   overlay,
-  components,
+  pins,
+  transform,
+  activePinId,
+  onSelectPin,
   pinMode,
+  onPointerUpdate,
+  containerRef,
+  isCollaborating,
 }: {
-  handleMount: (editor: Editor) => void;
+  onApi: (api: ExcalidrawImperativeAPI) => void;
+  initialData: ReturnType<typeof useInitialData>;
+  readOnly: boolean;
   overlay?: React.ReactNode;
-  components?: TLComponents;
+  pins?: CanvasPin[];
+  transform: CanvasTransform;
+  activePinId?: string | null;
+  onSelectPin?: (pinId: string) => void;
   pinMode?: boolean;
+  onPointerUpdate?: (payload: PointerPayload) => void;
+  containerRef: (node: HTMLDivElement | null) => void;
+  isCollaborating?: boolean;
 }) {
+  const { resolvedTheme } = useTheme();
+
   return (
     <div className="relative flex-1">
-      {/* tldraw measures its container, so it needs one with real dimensions. */}
+      {/* Excalidraw measures its container, so it needs one with real dimensions. */}
       <div
+        ref={containerRef}
         className="absolute inset-0"
         // A crosshair is the only affordance telling someone the next click
         // drops a pin rather than draws.
         style={pinMode ? { cursor: "crosshair" } : undefined}
       >
-        {/*
-          The licence key is not optional in production. tldraw reads env vars
-          itself, but only ones its bundler inlined, so it is passed explicitly:
-          with no key on a non-localhost domain tldraw resolves to
-          `unlicensed-production`, waits five seconds and then unmounts the
-          whole editor, which reads as the board loading and then vanishing.
-        */}
-        <Tldraw
-          onMount={handleMount}
-          components={components}
-          licenseKey={clientEnv.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        <Excalidraw
+          excalidrawAPI={onApi}
+          initialData={initialData}
+          viewModeEnabled={readOnly}
+          isCollaborating={isCollaborating}
+          onPointerUpdate={onPointerUpdate}
+          theme={resolvedTheme === "dark" ? "dark" : "light"}
+          // Excalidraw lays this out beside its own top-right controls. An
+          // absolutely-positioned overlay of ours sat on top of the Library
+          // button instead, which is the sort of thing that only shows up in a
+          // screenshot.
+          renderTopRightUI={overlay ? () => <>{overlay}</> : undefined}
+          UIOptions={{
+            canvasActions: {
+              // The board lives in Postgres and the room, not in a local file:
+              // "load from file" would silently replace everyone's canvas.
+              loadScene: false,
+              saveToActiveFile: false,
+            },
+          }}
+        />
+
+        <CanvasPins
+          pins={pins ?? []}
+          transform={transform}
+          activePinId={activePinId}
+          onSelect={onSelectPin}
         />
       </div>
-
-      {overlay ? (
-        // z-index clears tldraw's own UI layers.
-        <div className="pointer-events-none absolute top-2 right-2 z-[300] flex items-center gap-2">
-          {overlay}
-        </div>
-      ) : null}
     </div>
   );
 }
 
 function CollaborativeCanvas({
   boardId,
-  initialDocument,
+  initialScene,
   canEdit,
   user,
   pins,
@@ -188,41 +245,32 @@ function CollaborativeCanvas({
   onPlacePin,
   focusPoint,
 }: Omit<BoardCanvasProps, "collaborative">) {
-  const { editor, handleMount } = useCanvasMount(initialDocument, canEdit);
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const initialData = useInitialData(initialScene);
 
-  const { synced, restoredFromRoom } = useYjsBinding({ editor, enabled: true });
-  usePresence({ editor, user, enabled: true });
-  useCanvasPinInteractions({ editor, pinMode, onPlacePin, focusPoint });
+  const transform = useCanvasTransform(api);
+  const { synced } = useYjsBinding({ api, enabled: true });
+  const { onPointerUpdate } = usePresence({ api, user, enabled: true });
+  useCanvasPinInteractions({ api, container, transform, pinMode, onPlacePin, focusPoint });
 
   // `synced` gates the write, not the listening: a snapshot taken before the
   // room arrives could be missing a collaborator's newer content, but changes
   // made while waiting still have to be remembered. See use-board-persistence.
-  const { status } = useBoardPersistence({
-    editor,
-    boardId,
-    enabled: canEdit,
-    synced,
-    // A board with no snapshot whose content came out of the room has never
-    // been persisted. Bounded to that case on purpose: once the backfill save
-    // lands there is a snapshot, so a later visit does not repeat it.
-    backfill: initialDocument === null && restoredFromRoom,
-  });
-
-  // Memoized because tldraw remounts the slot whenever this object identity
-  // changes, which would make pins flicker on every render.
-  const components = useMemo<TLComponents>(
-    () => ({
-      InFrontOfTheCanvas: () => (
-        <CanvasPins pins={pins ?? []} activePinId={activePinId} onSelect={onSelectPin} />
-      ),
-    }),
-    [pins, activePinId, onSelectPin],
-  );
+  const { status } = useBoardPersistence({ api, boardId, enabled: canEdit, synced });
 
   return (
     <CanvasSurface
-      handleMount={handleMount}
-      components={components}
+      onApi={setApi}
+      containerRef={setContainer}
+      initialData={initialData}
+      readOnly={!canEdit}
+      isCollaborating
+      onPointerUpdate={onPointerUpdate}
+      pins={pins}
+      transform={transform}
+      activePinId={activePinId}
+      onSelectPin={onSelectPin}
       pinMode={pinMode}
       overlay={
         <>
@@ -242,7 +290,18 @@ function CollaborativeCanvas({
  * share link is view-only regardless of what the visitor's account could do
  * elsewhere.
  */
-function StaticCanvas({ initialDocument }: Omit<BoardCanvasProps, "collaborative">) {
-  const { handleMount } = useCanvasMount(initialDocument, false);
-  return <CanvasSurface handleMount={handleMount} />;
+function StaticCanvas({ initialScene }: Omit<BoardCanvasProps, "collaborative">) {
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const initialData = useInitialData(initialScene);
+  const transform = useCanvasTransform(api);
+
+  return (
+    <CanvasSurface
+      onApi={setApi}
+      containerRef={() => {}}
+      initialData={initialData}
+      readOnly
+      transform={transform}
+    />
+  );
 }

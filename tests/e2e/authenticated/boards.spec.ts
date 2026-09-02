@@ -96,8 +96,8 @@ test.describe("board canvas", () => {
 
     await expect(page).toHaveURL(/\/board\//, { timeout: 20_000 });
 
-    // tldraw mounts client-side, so this also proves the dynamic import works.
-    await expect(page.locator(".tl-container")).toBeVisible({ timeout: 30_000 });
+    // The editor mounts client-side, so this also proves the dynamic import works.
+    await expect(page.locator(".excalidraw")).toBeVisible({ timeout: 30_000 });
 
     // An editor sees no "View only" badge.
     await expect(page.getByText(/view only/i)).toBeHidden();

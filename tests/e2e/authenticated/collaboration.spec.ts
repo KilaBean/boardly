@@ -16,7 +16,7 @@ async function openBoard(page: Page): Promise<void> {
   await page.goto(`/w/${SEED.workspace.slug}`);
   await page.getByRole("heading", { name: SEED.sharedBoard }).click();
   await expect(page).toHaveURL(/\/board\//, { timeout: 30_000 });
-  await expect(page.locator(".tl-container")).toBeVisible({ timeout: 40_000 });
+  await expect(page.locator(".excalidraw")).toBeVisible({ timeout: 40_000 });
 }
 
 /**
@@ -24,20 +24,23 @@ async function openBoard(page: Page): Promise<void> {
  *
  * `page.mouse` dispatches through the browser's input pipeline, producing
  * trusted events that honour pointer capture. Synthetic `dispatchEvent`
- * pointer events do not, and tldraw ignores them — which is why an earlier
+ * pointer events do not, and the editor ignores them — which is why an earlier
  * attempt to verify this by hand produced no shapes.
  */
 async function drawStroke(page: Page): Promise<void> {
-  // 'd' selects the draw tool; also proves keyboard shortcuts reach the editor.
-  await page.locator(".tl-container").click({ position: { x: 400, y: 300 } });
-  await page.keyboard.press("d");
+  // Clicking the tool's label rather than pressing its shortcut: the keypress
+  // can land before the editor is listening, and the drag then becomes a
+  // selection rubber-band that silently draws nothing.
+  await page.getByTitle(/^Draw/).click();
 
-  const canvas = page.locator(".tl-canvas");
+  const canvas = page.locator("canvas.excalidraw__canvas.static");
   const box = await canvas.boundingBox();
   if (!box) throw new Error("Canvas has no bounding box");
 
-  const startX = box.x + box.width / 2;
-  const startY = box.y + box.height / 2;
+  // Right of centre: selecting a tool opens the style panel over the top-left
+  // of the canvas, and a drag that starts on it never reaches the board.
+  const startX = box.x + box.width * 0.6;
+  const startY = box.y + box.height * 0.55;
 
   await page.mouse.move(startX, startY);
   await page.mouse.down();
@@ -47,8 +50,17 @@ async function drawStroke(page: Page): Promise<void> {
   await page.mouse.up();
 }
 
-function countShapes(page: Page): Promise<number> {
-  return page.locator(".tl-shape").count();
+/**
+ * A picture of what the board is showing.
+ *
+ * Excalidraw draws to a canvas, so there is no per-shape DOM to count. The
+ * static canvas holds committed elements only — selection outlines and
+ * collaborator cursors live on a separate interactive canvas — so a change to
+ * these pixels means the drawing itself changed, not merely that somebody's
+ * mouse moved.
+ */
+function canvasPixels(page: Page): Promise<Buffer> {
+  return page.locator("canvas.excalidraw__canvas.static").screenshot();
 }
 
 test.describe("room authorization", () => {
@@ -116,13 +128,20 @@ test.describe("two users on one board", () => {
       timeout: 60_000,
     });
 
-    const before = await countShapes(other);
+    const before = await canvasPixels(other);
 
     await drawStroke(page);
-    await expect.poll(() => countShapes(page), { timeout: 30_000 }).toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await canvasPixels(page)).equals(before), {
+        timeout: 30_000,
+      })
+      .toBe(false);
 
-    // The assertion this whole phase existed for: the edit crossed the room.
-    await expect.poll(() => countShapes(other), { timeout: 60_000 }).toBeGreaterThan(before);
+    // The assertion this whole phase existed for: the edit crossed the room
+    // and the other person's board actually redrew.
+    await expect
+      .poll(async () => (await canvasPixels(other)).equals(before), { timeout: 60_000 })
+      .toBe(false);
 
     await context.close();
   });

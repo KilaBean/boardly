@@ -9,10 +9,10 @@ import type { Json } from "@/types/database";
 /**
  * Canvas snapshot persistence.
  *
- * A snapshot is an opaque tldraw document blob. We deliberately do NOT
- * validate its internal structure: tldraw owns that schema and migrates it
- * across versions, so a validator here would reject valid documents the day
- * tldraw ships a new record type.
+ * A snapshot is an opaque canvas document. We deliberately do NOT validate its
+ * internal structure: Excalidraw owns that schema and migrates it across
+ * versions, so a validator here would reject valid scenes the day Excalidraw
+ * ships a new element type. The shape is checked where it is read instead.
  *
  * What we do enforce is the boundary: it must be a JSON object, and it must
  * not be enormous. Without a size cap this action is an unauthenticated-shaped

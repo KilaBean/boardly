@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 /**
  * TanStack Query owns server/application state (workspaces, boards, members,
  * comments, activity). It deliberately does NOT hold collaborative canvas
- * state — that belongs to Liveblocks/tldraw — nor ephemeral UI state, which
+ * state — that belongs to Liveblocks/Excalidraw — nor ephemeral UI state, which
  * belongs to Zustand.
  *
  * The client is created inside `useState` rather than at module scope so that

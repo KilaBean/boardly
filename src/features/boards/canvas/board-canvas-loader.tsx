@@ -20,11 +20,10 @@ function CanvasSkeleton() {
 /**
  * Loads the canvas on the client only.
  *
- * tldraw is by far the largest dependency in the app and it measures DOM nodes
- * on mount, so server rendering it would cost a large payload on every page
- * that links to a board and still produce markup that is thrown away.
- * `ssr: false` keeps it out of the server bundle entirely; the dashboard
- * therefore never pays for it.
+ * Excalidraw is by far the largest dependency in the app, it measures DOM
+ * nodes on mount and it touches `window` at module scope, so it cannot be
+ * server rendered at all. `ssr: false` keeps it out of the server bundle
+ * entirely; the dashboard therefore never pays for it.
  */
 const BoardCanvasClient = dynamic(
   () => import("./board-canvas").then((module) => module.BoardCanvas),

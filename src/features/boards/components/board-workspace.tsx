@@ -3,12 +3,12 @@
 import { ArrowLeft, Eye, Lock, MapPin, MessageSquare, Users } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import type { TLStoreSnapshot } from "tldraw";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BoardCanvasLoader } from "@/features/boards/canvas/board-canvas-loader";
 import type { CanvasPin } from "@/features/boards/canvas/canvas-pins";
+import type { BoardScene } from "@/features/boards/canvas/scene";
 import type { BoardDetail } from "@/features/boards/data";
 import { CommentsPanel } from "@/features/comments/components/comments-panel";
 import type { CommentEntry, CommentPage } from "@/features/comments/data";
@@ -34,7 +34,7 @@ export function BoardWorkspace({
   invitations,
   shareLinkEnabled,
   initialComments,
-  initialDocument,
+  initialScene,
   unresolvedCount,
 }: {
   board: BoardDetail;
@@ -45,7 +45,7 @@ export function BoardWorkspace({
   invitations: PendingInvitation[];
   shareLinkEnabled: boolean;
   initialComments: CommentPage;
-  initialDocument: TLStoreSnapshot | null;
+  initialScene: BoardScene | null;
   unresolvedCount: number;
 }) {
   const [panelOpen, setPanelOpen] = useState(false);
@@ -59,7 +59,7 @@ export function BoardWorkspace({
   const commentsQuery = useComments(board.id, true, initialComments);
 
   // Derived inside the memo: flattening outside it produces a new array on
-  // every render, which would rebuild the pins (and remount tldraw's overlay)
+  // every render, which would rebuild the pins (and re-render the overlay)
   // continuously.
   const pins = useMemo<CanvasPin[]>(() => {
     const comments = commentsQuery.data?.pages.flatMap((page) => page.comments) ?? [];
@@ -170,7 +170,7 @@ export function BoardWorkspace({
       <div className="flex min-h-0 flex-1">
         <BoardCanvasLoader
           boardId={board.id}
-          initialDocument={initialDocument}
+          initialScene={initialScene}
           canEdit={canEdit}
           user={user}
           pins={pins}
