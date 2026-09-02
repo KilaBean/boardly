@@ -59,3 +59,7 @@ next-env.d.ts
 # redirect and cannot be deleted through normal APIs, but it must never be
 # committed — git aborts the whole `add` when it tries to index it.
 /nul
+
+# Local agent tooling: project notes, plans and editor config.
+# Kept on disk, not published.
+.claude/
