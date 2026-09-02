@@ -1,6 +1,9 @@
 import "server-only";
 
+import { INVITATION_TTL_DAYS } from "@/lib/invitations/constants";
 import { generateToken, hashToken, tokenMatches } from "@/lib/tokens/secure-token";
+
+export { INVITATION_TTL_DAYS };
 
 /**
  * Invitation tokens.
@@ -12,8 +15,6 @@ import { generateToken, hashToken, tokenMatches } from "@/lib/tokens/secure-toke
  * to whoever holds it, which is why only its hash is stored — see the shared
  * module for the reasoning.
  */
-
-export const INVITATION_TTL_DAYS = 7;
 
 export type GeneratedInvitationToken = {
   /** Send this to the invitee. Never persist it. */

@@ -59,6 +59,50 @@ describe("serverEnvSchema", () => {
   });
 });
 
+describe("mail configuration", () => {
+  const withMail = {
+    ...validServer,
+    RESEND_API_KEY: "re_abc123",
+    MAIL_FROM: "Boardly <invites@example.com>",
+  };
+
+  it("accepts a server with no mail configured at all", () => {
+    // Mail is optional: a local checkout with no API key must still boot, and
+    // invitations fall back to the copyable link.
+    expect(serverEnvSchema.safeParse(validServer).success).toBe(true);
+  });
+
+  it("accepts both values together", () => {
+    expect(serverEnvSchema.safeParse(withMail).success).toBe(true);
+  });
+
+  it.each([
+    ["a key with no sender", { RESEND_API_KEY: "re_abc123" }],
+    ["a sender with no key", { MAIL_FROM: "invites@example.com" }],
+  ])("rejects %s", (_label, partial) => {
+    // Half-configured is the dangerous state: it silently sends nothing while
+    // looking configured. Failing at boot is the loud, correct outcome.
+    expect(serverEnvSchema.safeParse({ ...validServer, ...partial }).success).toBe(false);
+  });
+
+  it("rejects a key that is not a Resend key", () => {
+    expect(serverEnvSchema.safeParse({ ...withMail, RESEND_API_KEY: "sk_live_x" }).success).toBe(
+      false,
+    );
+  });
+
+  it.each(["invites@example.com", "Boardly <invites@example.com>"])(
+    "accepts the sender %s",
+    (from) => {
+      expect(serverEnvSchema.safeParse({ ...withMail, MAIL_FROM: from }).success).toBe(true);
+    },
+  );
+
+  it.each(["not-an-email", "Boardly <not-an-email>", ""])("rejects the sender %s", (from) => {
+    expect(serverEnvSchema.safeParse({ ...withMail, MAIL_FROM: from }).success).toBe(false);
+  });
+});
+
 describe("formatEnvError", () => {
   it("names the offending variable without echoing its value", () => {
     const secret = "super-secret-value-that-must-not-leak";

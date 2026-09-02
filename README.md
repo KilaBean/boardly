@@ -205,6 +205,12 @@ Accepting an invitation runs in a single SQL function so the membership and
 the "used" flag cannot come apart, and it requires the signed-in email to
 match the invited address.
 
+Invitations are emailed through Resend when `RESEND_API_KEY` and `MAIL_FROM`
+are set. Delivery is **best-effort and never fails the invitation**: the row is
+committed first, and the share dialog always offers the copyable link — as a
+convenience when the email went out, and as the only route when it did not.
+With no mail configured the app still works; it just says so honestly.
+
 See [ADR 0007](docs/adr/0007-sharing-and-invitations.md).
 
 ### Comments and activity
@@ -251,6 +257,10 @@ time and split into two entrypoints:
   service-role key to the browser.
 
 `.env.local` is gitignored; `.env.example` contains placeholders only.
+
+`RESEND_API_KEY` and `MAIL_FROM` are optional, but must be set **together**:
+a key with no sender silently delivers nothing, so the schema rejects the
+half-configured state at boot rather than letting invitations vanish quietly.
 
 ## Testing
 

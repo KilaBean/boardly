@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { logActivity } from "@/lib/activity/log";
-import { requireUser } from "@/lib/auth/dal";
+import { getCurrentUser, requireUser } from "@/lib/auth/dal";
 import { clientEnv } from "@/lib/env/client";
+import { INVITATION_TTL_DAYS } from "@/lib/invitations/token";
+import { sendEmail } from "@/lib/mail";
 import { fail, ok, type ActionResult } from "@/lib/forms/action-result";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -13,8 +15,10 @@ import {
   createInvitationSchema,
   updateWorkspaceMemberRoleSchema,
   uuidSchema,
+  type CreateInvitationInput,
 } from "@/lib/validation/schemas";
 
+import { buildInvitationEmail } from "./invitation-email";
 import { createInvitation } from "./invitations";
 import { disableShareLink, enableShareLink } from "./share-links";
 
@@ -33,7 +37,7 @@ function invitationUrl(token: string): string {
 // Invitations
 // ---------------------------------------------------------------------------
 
-export type InvitationCreated = { url: string; email: string };
+export type InvitationCreated = { url: string; email: string; delivered: boolean };
 
 export async function createInvitationAction(
   raw: unknown,
@@ -48,10 +52,63 @@ export async function createInvitationAction(
 
   revalidatePath("/", "layout");
 
-  // No email is sent — there is no mail provider configured — so the inviter
-  // copies this link. That is why the raw token crosses back to the client
-  // exactly once and is never stored.
-  return ok({ url: invitationUrl(result.data.token), email: result.data.email });
+  const url = invitationUrl(result.data.token);
+
+  // The raw token crosses back to the client exactly once and is never stored,
+  // because the copyable link stays the fallback whenever mail is unconfigured
+  // or the send fails.
+  const { delivered } = await sendInvitationEmail({
+    to: result.data.email,
+    url,
+    input: parsed.data,
+  });
+
+  return ok({ url, email: result.data.email, delivered });
+}
+
+/**
+ * Sends the invitation, best-effort.
+ *
+ * Deliberately after the row is committed and never allowed to fail the
+ * action: the invitation is the durable thing, and an undelivered one is
+ * recoverable by copying the link. Failing the whole invite because a mail
+ * provider was slow would destroy work to report a delivery problem.
+ */
+async function sendInvitationEmail({
+  to,
+  url,
+  input,
+}: {
+  to: string;
+  url: string;
+  input: CreateInvitationInput;
+}): Promise<{ delivered: boolean }> {
+  // `getCurrentUser` is request-cached, so this costs nothing extra here.
+  const inviter = await getCurrentUser();
+  const inviterName = inviter?.displayName ?? "Someone";
+
+  // Names are read back from the database rather than taken from the client:
+  // they go into an email sent to someone else, so they must not be
+  // attacker-controlled text passed through the form.
+  const supabase = await createClient();
+
+  const { data } =
+    input.target === "board"
+      ? await supabase.from("boards").select("name").eq("id", input.boardId).maybeSingle()
+      : await supabase.from("workspaces").select("name").eq("id", input.workspaceId).maybeSingle();
+
+  const email = buildInvitationEmail({
+    to,
+    inviterName,
+    targetName: data?.name ?? null,
+    target: input.target,
+    role: input.role,
+    url,
+    expiresInDays: INVITATION_TTL_DAYS,
+  });
+
+  const result = await sendEmail(email);
+  return { delivered: result.delivered };
 }
 
 export async function revokeInvitationAction(raw: unknown): Promise<ActionResult<void>> {

@@ -31,6 +31,7 @@ import {
 } from "@/features/sharing/actions";
 import type { BoardMemberEntry, PendingInvitation } from "@/features/sharing/data";
 import { rethrowIfNavigation, UNEXPECTED_ERROR } from "@/lib/forms/action-error";
+import { INVITATION_TTL_DAYS } from "@/lib/invitations/constants";
 import { emailSchema } from "@/lib/validation/schemas";
 
 const inviteSchema = z.object({
@@ -104,7 +105,9 @@ export function ShareBoardDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [invite, setInvite] = useState<{ url: string; email: string; delivered: boolean } | null>(
+    null,
+  );
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -135,7 +138,7 @@ export function ShareBoardDialog({
         return;
       }
 
-      setInviteUrl(result.data.url);
+      setInvite(result.data);
       reset();
       router.refresh();
     } catch (error) {
@@ -169,7 +172,7 @@ export function ShareBoardDialog({
         if (!next) {
           // The raw token is shown once and never stored, so clear it rather
           // than leaving it sitting in component state.
-          setInviteUrl(null);
+          setInvite(null);
           setShareUrl(null);
           setFormError(null);
         }
@@ -231,13 +234,26 @@ export function ShareBoardDialog({
                 </Button>
               </form>
 
-              {inviteUrl ? (
+              {invite ? (
                 <div className="space-y-2 rounded-md border p-3">
+                  {/*
+                    The link is shown either way. When the email went out it is
+                    a convenience; when it did not, it is the only way the
+                    invitation reaches anybody, so it must never be hidden
+                    behind a claim of delivery we cannot stand behind.
+                  */}
                   <p className="text-muted-foreground text-xs">
-                    No email is sent yet — copy this link and send it yourself. It works once, for
-                    that address only, and expires in 7 days.
+                    {invite.delivered ? (
+                      <>
+                        Invitation emailed to <span className="font-medium">{invite.email}</span>.
+                        You can also share the link directly.
+                      </>
+                    ) : (
+                      <>We could not send the email — copy this link and send it yourself.</>
+                    )}{" "}
+                    It works once, for that address only, and expires in {INVITATION_TTL_DAYS} days.
                   </p>
-                  <CopyLink url={inviteUrl} />
+                  <CopyLink url={invite.url} />
                 </div>
               ) : null}
             </section>
