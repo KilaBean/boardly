@@ -102,6 +102,8 @@ export type Database = {
           visibility: BoardVisibility;
           /** Maintained by a trigger on board_share_links; not directly writable. */
           share_link_enabled: boolean;
+          /** What the share link grants. Null when there is no link. */
+          share_link_role: BoardRole | null;
           created_at: string;
           updated_at: string;
           archived_at: string | null;
@@ -133,14 +135,17 @@ export type Database = {
         Row: {
           board_id: string;
           token_hash: string;
+          role: BoardRole;
           created_at: string;
         };
         Insert: {
           board_id: string;
           token_hash: string;
+          role?: BoardRole;
         };
         Update: {
           token_hash?: string;
+          role?: BoardRole;
         };
         Relationships: [];
       };
@@ -268,6 +273,10 @@ export type Database = {
       accept_invitation: {
         Args: { p_token_hash: string };
         Returns: { workspaceId: string; boardId: string | null; target: string };
+      };
+      redeem_share_link: {
+        Args: { p_token_hash: string };
+        Returns: { boardId: string };
       };
     };
     Enums: {

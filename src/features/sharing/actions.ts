@@ -20,7 +20,7 @@ import {
 
 import { buildInvitationEmail } from "./invitation-email";
 import { createInvitation } from "./invitations";
-import { disableShareLink, enableShareLink } from "./share-links";
+import { disableShareLink, enableShareLink, redeemShareLink } from "./share-links";
 
 const PERMISSION_DENIED = "You do not have permission to do that.";
 
@@ -141,10 +141,10 @@ export type ShareLinkCreated = { url: string };
 export async function enableShareLinkAction(raw: unknown): Promise<ActionResult<ShareLinkCreated>> {
   const user = await requireUser();
 
-  const parsed = z.object({ boardId: uuidSchema }).safeParse(raw);
+  const parsed = z.object({ boardId: uuidSchema, role: boardRoleSchema }).safeParse(raw);
   if (!parsed.success) return fail("That board could not be found.");
 
-  const result = await enableShareLink(parsed.data.boardId);
+  const result = await enableShareLink(parsed.data.boardId, parsed.data.role);
   if ("error" in result) return fail(result.error);
 
   const supabase = await createClient();
@@ -160,7 +160,7 @@ export async function enableShareLinkAction(raw: unknown): Promise<ActionResult<
       boardId: parsed.data.boardId,
       actorId: user.id,
       eventType: "board.shared",
-      metadata: { enabled: true },
+      metadata: { enabled: true, role: parsed.data.role },
     });
   }
 
@@ -310,4 +310,26 @@ export async function removeWorkspaceMemberAction(raw: unknown): Promise<ActionR
 
   revalidatePath("/", "layout");
   return ok();
+}
+
+/**
+ * Redeems an edit share link for the signed-in user.
+ *
+ * A separate action rather than something the share page does while rendering:
+ * it changes membership, so it must be a deliberate POST the visitor triggers,
+ * not a side effect of following a link.
+ */
+export async function redeemShareLinkAction(
+  raw: unknown,
+): Promise<ActionResult<{ boardId: string }>> {
+  await requireUser();
+
+  const parsed = z.object({ token: z.string().min(20).max(200) }).safeParse(raw);
+  if (!parsed.success) return fail("That link is not valid.");
+
+  const result = await redeemShareLink(parsed.data.token);
+  if ("error" in result) return fail(result.error);
+
+  revalidatePath("/", "layout");
+  return ok({ boardId: result.boardId });
 }

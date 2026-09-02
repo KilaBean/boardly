@@ -117,14 +117,21 @@ export async function listPendingInvitations(
  * by design. An owner who loses the link must regenerate it, which also
  * revokes the old one.
  */
-export async function getShareLinkState(boardId: string): Promise<{ enabled: boolean }> {
+export async function getShareLinkState(
+  boardId: string,
+): Promise<{ enabled: boolean; role: "editor" | "viewer" }> {
   const supabase = await createClient();
 
+  // Both columns are mirrored onto `boards` by a trigger and carry no UPDATE
+  // grant, so reading them here cannot be spoofed by a client.
   const { data } = await supabase
     .from("boards")
-    .select("share_link_enabled")
+    .select("share_link_enabled, share_link_role")
     .eq("id", boardId)
     .maybeSingle();
 
-  return { enabled: data?.share_link_enabled ?? false };
+  return {
+    enabled: data?.share_link_enabled ?? false,
+    role: (data?.share_link_role as "editor" | "viewer" | null) ?? "viewer",
+  };
 }

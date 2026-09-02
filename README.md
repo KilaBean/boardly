@@ -198,8 +198,15 @@ check (share_link_enabled = false or share_token_hash is not null)
 existing share URL can never be shown again — the dialog offers "Regenerate",
 which also revokes the old link.
 
-`/share/<token>` is the only route reachable without a session. It renders a
-snapshot read-only, joins no collaboration room, and is `noindex`.
+`/share/<token>` is the only route reachable without a session, so the owner
+chooses what a link grants **before it exists** — view or edit.
+
+A **view** link is anonymous: a read-only snapshot, no collaboration room,
+`noindex`. An **edit** link never hands write access to an anonymous visitor.
+It is redeemed by a signed-in user and becomes ordinary board membership, so
+every edit is attributable, shows up in the activity trail, and one person can
+be removed without revoking the link for everyone else. Until it is redeemed
+the page is exactly as read-only as a view link.
 
 Profiles are readable by people you share a **workspace or a board** with. The
 board half was missing at first, so an invited collaborator — who gets board

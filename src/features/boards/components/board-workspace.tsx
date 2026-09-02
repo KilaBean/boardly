@@ -33,6 +33,7 @@ export function BoardWorkspace({
   members,
   invitations,
   shareLinkEnabled,
+  shareLinkRole,
   initialComments,
   initialScene,
   unresolvedCount,
@@ -44,6 +45,7 @@ export function BoardWorkspace({
   members: BoardMemberEntry[];
   invitations: PendingInvitation[];
   shareLinkEnabled: boolean;
+  shareLinkRole: "editor" | "viewer";
   initialComments: CommentPage;
   initialScene: BoardScene | null;
   unresolvedCount: number;
@@ -136,6 +138,7 @@ export function BoardWorkspace({
             members={members}
             invitations={invitations}
             shareLinkEnabled={shareLinkEnabled}
+            shareLinkRole={shareLinkRole}
           />
 
           {board.archivedAt ? (

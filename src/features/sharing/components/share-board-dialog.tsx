@@ -94,6 +94,7 @@ export function ShareBoardDialog({
   members,
   invitations,
   shareLinkEnabled,
+  shareLinkRole,
 }: {
   boardId: string;
   workspaceId: string;
@@ -101,6 +102,7 @@ export function ShareBoardDialog({
   members: BoardMemberEntry[];
   invitations: PendingInvitation[];
   shareLinkEnabled: boolean;
+  shareLinkRole: "editor" | "viewer";
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -110,6 +112,9 @@ export function ShareBoardDialog({
   );
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // What a newly created link will grant. Seeded from the active link so
+  // "Regenerate" keeps the level unless it is deliberately changed.
+  const [linkRole, setLinkRole] = useState<"editor" | "viewer">(shareLinkRole);
 
   const {
     register,
@@ -364,12 +369,29 @@ export function ShareBoardDialog({
                   </h3>
                   <p className="text-muted-foreground text-xs">
                     {shareLinkEnabled
-                      ? "A view-only link is active."
+                      ? shareLinkRole === "editor"
+                        ? "An edit link is active. People sign in, then join the board."
+                        : "A view-only link is active."
                       : "Off. Nobody can open this board without an invitation."}
                   </p>
                 </div>
 
-                <div className="flex shrink-0 gap-2">
+                <div className="flex shrink-0 items-center gap-2">
+                  {/*
+                    Chosen before the link exists, so the owner can never hand
+                    out a URL without having decided what it grants.
+                  */}
+                  <select
+                    aria-label="Link access level"
+                    value={linkRole}
+                    disabled={isPending}
+                    onChange={(event) => setLinkRole(event.target.value as "editor" | "viewer")}
+                    className="border-input bg-background h-8 rounded-md border px-2 text-sm"
+                  >
+                    <option value="viewer">Can view</option>
+                    <option value="editor">Can edit</option>
+                  </select>
+
                   <Button
                     type="button"
                     size="sm"
@@ -377,7 +399,7 @@ export function ShareBoardDialog({
                     disabled={isPending}
                     onClick={() =>
                       startTransition(async () => {
-                        const result = await enableShareLinkAction({ boardId });
+                        const result = await enableShareLinkAction({ boardId, role: linkRole });
                         if (!result.ok) {
                           toast.error(result.error);
                           return;

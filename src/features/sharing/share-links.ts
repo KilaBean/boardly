@@ -18,6 +18,8 @@ import type { Json } from "@/types/database";
  *   2. Only then use the admin client, scoped to that one board id.
  */
 
+export type ShareLinkRole = "editor" | "viewer";
+
 export type ShareLinkResult = { token: string } | { error: string };
 
 /** Confirms ownership using the caller's own permissions, never the admin client. */
@@ -33,7 +35,10 @@ async function assertBoardOwner(boardId: string): Promise<boolean> {
  * Rotation is the revocation mechanism: replacing the hash invalidates every
  * previously shared URL immediately.
  */
-export async function enableShareLink(boardId: string): Promise<ShareLinkResult> {
+export async function enableShareLink(
+  boardId: string,
+  role: ShareLinkRole,
+): Promise<ShareLinkResult> {
   if (!(await assertBoardOwner(boardId))) {
     return { error: "Only the board owner can change sharing." };
   }
@@ -47,7 +52,7 @@ export async function enableShareLink(boardId: string): Promise<ShareLinkResult>
   // boards.share_link_enabled in step.
   const { error } = await admin
     .from("board_share_links")
-    .upsert({ board_id: boardId, token_hash: tokenHash }, { onConflict: "board_id" });
+    .upsert({ board_id: boardId, token_hash: tokenHash, role }, { onConflict: "board_id" });
 
   if (error) return { error: "Could not create a share link. Please try again." };
   return { token };
@@ -73,6 +78,8 @@ export type SharedBoard = {
   id: string;
   name: string;
   document: Json | null;
+  /** What the link grants. "editor" is redeemed by a signed-in user. */
+  role: ShareLinkRole;
 };
 
 /**
@@ -94,7 +101,7 @@ export async function resolveShareToken(token: unknown): Promise<SharedBoard | n
   // join behaviour across a table `authenticated` cannot see.
   const { data: link } = await admin
     .from("board_share_links")
-    .select("board_id")
+    .select("board_id, role")
     .eq("token_hash", hashToken(token))
     .maybeSingle();
 
@@ -118,5 +125,41 @@ export async function resolveShareToken(token: unknown): Promise<SharedBoard | n
     .limit(1)
     .maybeSingle();
 
-  return { id: board.id, name: board.name, document: snapshot?.snapshot ?? null };
+  return {
+    id: board.id,
+    name: board.name,
+    document: snapshot?.snapshot ?? null,
+    role: link.role as ShareLinkRole,
+  };
+}
+
+/**
+ * Turns an edit link into board membership for the signed-in caller.
+ *
+ * Runs through the user's own client so `auth.uid()` inside the function is
+ * the person redeeming it — the admin client would make every redemption
+ * anonymous, which is the whole thing this design avoids.
+ *
+ * The token is hashed here; the raw value never reaches the database.
+ */
+export async function redeemShareLink(
+  token: unknown,
+): Promise<{ boardId: string } | { error: string }> {
+  if (!isPlausibleToken(token)) return { error: "That link is not valid." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("redeem_share_link", {
+    p_token_hash: hashToken(token),
+  });
+
+  if (error || !data) {
+    // The function raises one message for every failure mode, so nothing here
+    // can be used to probe which links exist.
+    return { error: "That link cannot be used to edit this board." };
+  }
+
+  const boardId = (data as { boardId?: string }).boardId;
+  if (!boardId) return { error: "That link cannot be used to edit this board." };
+
+  return { boardId };
 }

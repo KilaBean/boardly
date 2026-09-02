@@ -66,6 +66,7 @@ export default async function BoardPage({ params }: PageProps<"/board/[boardId]"
       members={members}
       invitations={invitations}
       shareLinkEnabled={shareState.enabled}
+      shareLinkRole={shareState.role}
       initialComments={comments}
       unresolvedCount={unresolvedCount}
       /*
