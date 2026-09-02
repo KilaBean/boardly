@@ -115,7 +115,6 @@ export function ShareBoardDialog({
     register,
     handleSubmit,
     reset,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<InviteValues>({
     resolver: zodResolver(inviteSchema),
@@ -217,10 +216,16 @@ export function ShareBoardDialog({
                     {...register("email")}
                   />
                 </div>
+                {/*
+                  Registered rather than driven by `setValue` on change. As an
+                  uncontrolled select it kept its displayed value through the
+                  `reset()` after a successful invite while the form state went
+                  back to "editor" — so the next invite silently granted edit
+                  access while the UI still read "Can view".
+                */}
                 <select
                   aria-label="Access level"
-                  defaultValue="editor"
-                  onChange={(event) => setValue("role", event.target.value as InviteValues["role"])}
+                  {...register("role")}
                   className="border-input bg-background h-9 rounded-md border px-2 text-sm"
                 >
                   <option value="editor">Can edit</option>
